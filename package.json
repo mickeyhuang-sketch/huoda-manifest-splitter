@@ -1,0 +1,12 @@
+{
+  "name": "manifest-splitter",
+  "version": "1.0.0",
+  "description": "托運單拆分工具（純前端靜態網站）",
+  "private": true,
+  "scripts": {
+    "start": "serve -s . -l ${PORT:-3000}"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  }
+}

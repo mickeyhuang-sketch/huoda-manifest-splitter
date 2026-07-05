@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shopline 託運單上傳標籤小幫手</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Montserrat:wght@600;700;800&family=Noto+Sans+TC:wght@400;500;600;700&display=swap');
+
+  :root{
+    /* 貨達品牌色系：主色取自貨達 logo 深青綠 #2F5A66 */
+    --paper: #F1F4F4;
+    --paper-line: #DDE4E4;
+    --ink: #1D2426;
+    --ink-soft: #5C6B6F;
+    --brand: #2F5A66;
+    --brand-dark: #234750;
+    --brand-tint: #EAF1F2;
+    --warn-y: #D9A62E;
+    --warn-bg: #FAF3DF;
+    --warn-ink: #77551D;
+    --ok: #2F7D5C;
+    --card: #FFFFFF;
+    --mono: 'IBM Plex Mono', 'Courier New', monospace;
+    --disp: 'Montserrat', 'Noto Sans TC', sans-serif;
+    --body: 'Noto Sans TC', 'IBM Plex Mono', sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--paper);
+    background-image: radial-gradient(circle, rgba(29,29,31,0.05) 1px, transparent 1px);
+    background-size: 16px 16px;
+    color: var(--ink);
+    font-family: var(--body);
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+  }
+
+  .wrap{ max-width: 1040px; margin: 0 auto; }
+
+  header{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    border-bottom: 3px solid var(--ink);
+    padding-bottom: 18px; margin-bottom: 8px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .brand-logo{ height: 46px; display: block; margin-bottom: 16px; }
+  .brand-eyebrow{
+    font-family: var(--mono); font-size: 12px; letter-spacing: 3px;
+    color: var(--ink-soft); text-transform: uppercase; margin-bottom: 6px;
+  }
+  h1{
+    font-family: var(--disp); font-weight: 800; font-size: 38px;
+    letter-spacing: 0.5px; margin: 0; line-height: 1;
+    color: var(--ink);
+  }
+  h1 span{ color: var(--brand); }
+  .subhead{
+    font-family: var(--body); color: var(--ink-soft); font-size: 15px;
+    margin: 10px 0 8px; line-height: 1.7; max-width: 720px;
+  }
+  .courier-chips{ display:flex; gap:8px; margin-bottom: 26px; flex-wrap: wrap; }
+  .chip{
+    font-family: var(--mono); font-size: 11.5px; padding: 4px 11px; border-radius: 12px;
+    background: #fff; border: 1px solid var(--paper-line); color: var(--ink-soft);
+  }
+
+  .step{
+    background: var(--card);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    margin-bottom: 18px;
+    box-shadow: 0 1px 0 rgba(22,35,59,0.04);
+    overflow: hidden;
+  }
+  /* 步驟 1、2（使用者動作）並排；解析/下載是動作列；結果區全寬在下 */
+  .steps-row{
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    align-items: stretch;
+    margin-bottom: 18px;
+  }
+  .steps-row .step{ margin-bottom: 0; display: flex; flex-direction: column; }
+  .steps-row .step-body{ flex: 1; display: flex; flex-direction: column; }
+  .steps-row .drop{ flex-shrink: 0; }
+  @media (max-width: 900px){ .steps-row{ grid-template-columns: 1fr; } }
+
+  .action-card{
+    background: var(--card);
+    border: 1px solid var(--paper-line);
+    border-radius: 6px;
+    box-shadow: 0 1px 0 rgba(22,35,59,0.04);
+    padding: 22px 20px;
+    margin-bottom: 18px;
+    text-align: center;
+  }
+  .action-row{
+    display: flex; align-items: center; justify-content: center;
+    gap: 22px; flex-wrap: wrap;
+  }
+  .flow-arrow{
+    font-family: var(--disp); font-size: 30px; font-weight: 700;
+    color: var(--ink-soft); line-height: 1; user-select: none;
+  }
+  @media (max-width: 720px){
+    .action-row{ flex-direction: column; gap: 10px; }
+    .flow-arrow{ transform: rotate(90deg); }
+  }
+  .step-head{
+    display:flex; align-items:center; gap: 14px;
+    padding: 16px 20px;
+    border-bottom: 1px dashed var(--paper-line);
+  }
+  .step-num{
+    font-family: var(--disp); font-weight: 800; font-size: 22px;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--brand); color: #fff;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink: 0;
+  }
+  .step.done .step-num{ background: var(--ok); }
+  .step-title{ font-family: var(--disp); font-size: 22px; font-weight: 700; letter-spacing: 0.3px; }
+  .step-desc{ font-size: 13.5px; color: var(--ink-soft); margin-top: 2px; }
+  .step-tag{
+    margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+    background: var(--paper); padding: 3px 9px; border-radius: 10px; white-space:nowrap;
+  }
+  .step-body{ padding: 20px; }
+
+  .drop{
+    border: 2px dashed #B9C0C0;
+    border-radius: 6px;
+    padding: 22px 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    background: #FAFBFB;
+  }
+  .drop:hover, .drop.drag{ border-color: var(--brand); background: var(--brand-tint); }
+  .drop-icon{ font-size: 24px; margin-bottom: 6px; }
+  .drop-main{ font-weight: 600; font-size: 14px; }
+  .drop-sub{ font-size: 12px; color: var(--ink-soft); margin-top: 4px; font-family: var(--mono); }
+  .filepills{ display:flex; flex-wrap:wrap; gap:8px; margin-top: 10px; }
+  .filepill{
+    display:inline-flex; align-items:center; gap:8px;
+    background: #EAF4EF; border: 1px solid #BCDCCB; color: var(--ok);
+    padding: 6px 11px; border-radius: 20px; font-size: 12.5px;
+    font-family: var(--mono);
+  }
+  .filepill.tag-unknown{ background:var(--warn-bg); border-color:var(--warn-y); color:var(--warn-ink); }
+  .filepill button{
+    background:none; border:none; color:var(--brand); cursor:pointer;
+    font-family: var(--mono); font-size: 13px; padding:0;
+  }
+  input[type=file]{ display:none; }
+
+  .row2{ display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px){ .row2{ grid-template-columns: 1fr; } }
+
+  button.primary{
+    font-family: var(--disp); font-weight: 700; font-size: 18px; letter-spacing: 0.5px;
+    background: var(--brand); color: #fff; border: none;
+    padding: 13px 30px; border-radius: 4px; cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  button.primary:hover{ background: var(--brand-dark); }
+  button.primary:active{ transform: translateY(1px); }
+  button.primary:disabled{ background:#C7CCCC; cursor:not-allowed; }
+
+  table{ width:100%; border-collapse: collapse; font-size: 13px; }
+  thead th{
+    text-align:left; font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--ink-soft);
+    border-bottom: 2px solid var(--ink); padding: 7px 8px; white-space:nowrap;
+  }
+  tbody td{ padding: 7px 8px; border-bottom: 1px solid var(--paper-line); font-family: var(--mono); vertical-align: middle; }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr.row-bad{ background: #FCF8EC; }
+  .badge{
+    display:inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    padding: 2px 8px; border-radius: 10px; white-space:nowrap;
+  }
+  .badge.ok{ background:#EAF4EF; color: var(--ok); }
+  .badge.warn{ background:var(--warn-bg); color:var(--warn-ink); }
+  .badge.bad{ background:var(--warn-y); color:#1D2426; }
+  .badge.courier{ background:var(--paper); color: var(--ink-soft); }
+
+  .cell-input{
+    font-family: var(--mono); font-size: 12.5px; border: 1px solid var(--paper-line);
+    border-radius: 3px; padding: 4px 6px; width: 100%; min-width: 130px;
+    background: #fff;
+  }
+  .cell-input.bad{ border-color: var(--warn-y); background: #FCF8EC; }
+  select.cell-input{ cursor:pointer; }
+
+  .summary-bar{ display:flex; gap: 22px; flex-wrap: wrap; margin-bottom: 16px; font-family: var(--mono); font-size: 13px; }
+  .summary-bar b{ font-family: var(--disp); font-size: 22px; display:block; color: var(--ink); }
+
+  .warn-box{
+    background: var(--warn-bg); border: 1px solid var(--warn-y); color: var(--warn-ink);
+    padding: 12px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; line-height: 1.6;
+  }
+  .error-box{
+    background: var(--warn-bg); border: 1px solid var(--warn-y); color: var(--warn-ink);
+    padding: 12px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; line-height: 1.6;
+  }
+  .info-box{
+    background: var(--brand-tint); border: 1px solid #B9D2D8; color: #24474F;
+    padding: 12px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; line-height: 1.6;
+  }
+
+  .download-row{ display:flex; align-items:center; gap: 16px; flex-wrap: wrap; padding-top: 6px; }
+  .download-note{ font-size: 12.5px; color: var(--ink-soft); font-family: var(--mono); }
+
+  .progress{ height: 6px; background: var(--paper-line); border-radius: 3px; overflow:hidden; margin: 14px 0 4px; display:none; }
+  .progress.show{ display:block; }
+  .progress > div{ height:100%; width:0%; background: var(--brand); transition: width .2s; }
+  .progress-label{ font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); display:none; }
+  .progress-label.show{ display:block; }
+
+  footer{ margin-top: 40px; text-align:center; font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); letter-spacing: 0.5px; }
+  .locked{ opacity: 0.45; pointer-events: none; }
+  /* 表格不用內部捲軸：有幾筆長幾筆，整頁自然捲動，避免「以為只有這幾筆」 */
+  .tablewrap{ border:1px solid var(--paper-line); border-radius:4px; }
+  thead th{ position: sticky; top: 0; background: var(--card); z-index: 2; }
+  @media (max-width: 900px){ .tablewrap{ overflow-x: auto; } }
+  .btn-confirm{
+    display:block; margin-top:5px; font-family: var(--mono); font-size: 11px;
+    color: var(--ok); background:#fff; border:1px solid #BCDCCB; border-radius:10px;
+    padding:2px 8px; cursor:pointer; white-space:nowrap;
+  }
+  .btn-confirm:hover{ background:#EAF4EF; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <img class="brand-logo" src="huoda-logo.svg" alt="貨達共享倉儲">
+      <div class="brand-eyebrow">訂單上傳工具</div>
+      <h1>Shopline 託運單<span>上傳標籤</span>小幫手</h1>
+    </div>
+  </header>
+  <p class="subhead">
+    把 Shopline 下載的訂單檔和託運單 PDF 丟進來，轉成可上傳貨達倉儲系統的託運單檔案。
+  </p>
+  <div class="courier-chips">
+    <span class="chip">支援：7-11 ・ 全家 ・ 新竹物流</span>
+  </div>
+
+  <div class="steps-row">
+    <!-- STEP 1：訂單資料 -->
+    <div class="step" id="step1">
+      <div class="step-head">
+        <div class="step-num">1</div>
+        <div>
+          <div class="step-title">上傳訂單資料</div>
+          <div class="step-desc">從 Shopline 下載的訂單檔（可多份）</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="drop" id="dropOrders">
+          <div class="drop-icon">📊</div>
+          <div class="drop-main">拖曳到這裡，或點擊選擇</div>
+          <div class="drop-sub">.xlsx ・ .csv</div>
+        </div>
+        <input type="file" id="fileOrders" accept=".xlsx,.xls,.csv" multiple>
+        <div class="filepills" id="ordersPills"></div>
+        <div id="ordersWarn"></div>
+      </div>
+    </div>
+
+    <!-- STEP 2：託運單 PDF -->
+    <div class="step" id="step2">
+      <div class="step-head">
+        <div class="step-num">2</div>
+        <div>
+          <div class="step-title">上傳託運單 PDF</div>
+          <div class="step-desc">不同物流混在一起也可以（可多份）</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="drop" id="dropPdf">
+          <div class="drop-icon">📄</div>
+          <div class="drop-main">拖曳到這裡，或點擊選擇</div>
+          <div class="drop-sub">.pdf</div>
+        </div>
+        <input type="file" id="filePdf" accept="application/pdf" multiple>
+        <div class="filepills" id="pdfPills"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 動作列：解析 ➜ 下載 -->
+  <div class="action-card">
+    <div class="action-row">
+      <button class="primary" id="btnParse" disabled>開始解析</button>
+      <div class="flow-arrow">➜</div>
+      <button class="primary" id="btnDownload" disabled>下載 ZIP（PDF + CSV）</button>
+    </div>
+    <div class="progress" id="progress"><div id="progressBar"></div></div>
+    <div class="progress-label" id="progressLabel"></div>
+    <div class="download-note" id="downloadNote" style="margin-top:8px;"></div>
+    <div id="parseMsg" style="text-align:left; margin-top:10px;"></div>
+  </div>
+
+  <!-- 確認結果 -->
+  <div class="step locked" id="resultsCard">
+    <div class="step-head">
+      <div class="step-num">✓</div>
+      <div>
+        <div class="step-title">確認結果</div>
+        <div class="step-desc">黃框的欄位請手動選擇或修正，確認後再按上方「下載 ZIP」</div>
+      </div>
+    </div>
+    <div class="step-body" id="resultsBody">
+      <div class="summary-bar" id="summaryBar"></div>
+      <div id="warnArea"></div>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th>快遞商</th>
+              <th>出貨單名稱（訂單號碼）</th>
+              <th>物流單號</th>
+              <th style="width:70px">狀態</th>
+            </tr>
+          </thead>
+          <tbody id="resultsTbody"></tbody>
+        </table>
+      </div>
+      <datalist id="orderDatalist"></datalist>
+    </div>
+  </div>
+
+  <footer>由貨達共享倉儲開發使用</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+/* =========================================================================
+   GEOMETRY CONSTANTS — calibrated against real sample waybills.
+   All boxes are fractions of page width/height (top-left origin, 0..1).
+   ========================================================================= */
+
+// ---- 7-11 (text-based) ----
+const ORDER_LABEL = '廠商訂單編號';
+const DELIVERY_LABEL = '配送編號';
+const ROW_PITCH_DEFAULT = 275.47, ROW_UP_RATIO = 0.7254, ROW_DOWN_RATIO = 0.1503;
+const COL_PITCH_DEFAULT = 287.49, COL_LEFT_RATIO = 0.0720, COL_RIGHT_RATIO = 0.7674;
+
+// ---- 全家 (image-based, 2 labels per page) ----
+const FAMILY_BOXES = [
+  { left: 0.0580, top: 0.0567, width: 0.4418, height: 0.4369 },
+  { left: 0.4998, top: 0.0567, width: 0.4418, height: 0.4369 },
+];
+// 廠商編號 digit line, relative to each label box above
+const FAMILY_DIGIT_SUBBOX = { left: 0, top: 0.078, width: 0.62, height: 0.072 };
+
+// ---- 新竹物流 (image-based, 1 label per page) ----
+const HSINCHU_PHONE_BOX = { left: 0.0799, top: 0.7261, width: 0.1961, height: 0.02496 };
+const HSINCHU_TRACK_BOX = { left: 0.2868, top: 0.4759, width: 0.2251, height: 0.02496 };
+const OCR_RENDER_DPI = 450;
+const OCR_PAD = 0.010;
+
+const COURIER_LABELS = { seven11: '7-11', family: '全家', hsinchu: '新竹物流', unknown: '未知格式' };
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+let pdfFiles = [];      // [{name, bytes(ArrayBuffer), courier, pdfjsDoc, pdfLibDoc}]
+let orderFiles = [];    // [File]
+const csvHeaderCols = ['出貨單名稱', '物流單號', '檔名']; // 固定輸出範本
+let orderIndex = null;  // { shipMap, phoneMap, orderList, byOrderNo }
+let resultRows = [];    // unified rows for preview + export
+let tessWorker = null;
+
+/* =========================================================================
+   UI WIRING — file pickers
+   ========================================================================= */
+function setupDrop(dropEl, inputEl, onFiles){
+  dropEl.addEventListener('click', () => inputEl.click());
+  dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+  dropEl.addEventListener('drop', e => {
+    e.preventDefault(); dropEl.classList.remove('drag');
+    if (e.dataTransfer.files.length) onFiles(Array.from(e.dataTransfer.files));
+  });
+  inputEl.addEventListener('change', e => { if (e.target.files.length) onFiles(Array.from(e.target.files)); });
+}
+
+const dropPdf = document.getElementById('dropPdf');
+const filePdfInput = document.getElementById('filePdf');
+const pdfPills = document.getElementById('pdfPills');
+const dropOrders = document.getElementById('dropOrders');
+const fileOrdersInput = document.getElementById('fileOrders');
+const ordersPills = document.getElementById('ordersPills');
+const btnParse = document.getElementById('btnParse');
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+setupDrop(dropPdf, filePdfInput, async (files) => {
+  for (const f of files) {
+    const buf = await f.arrayBuffer();
+    pdfFiles.push({ name: f.name, bytes: buf, courier: null });
+  }
+  renderPdfPills();
+  updateParseButton();
+});
+setupDrop(dropOrders, fileOrdersInput, (files) => {
+  for (const f of files) orderFiles.push(f);
+  renderOrdersPills();
+  updateParseButton();
+  validateOrderColumns();
+});
+
+function renderPdfPills(){
+  pdfPills.innerHTML = pdfFiles.map((f,i) => {
+    const tag = f.courier ? COURIER_LABELS[f.courier] : '待判斷';
+    const cls = (f.courier === 'unknown') ? 'tag-unknown' : '';
+    return `<span class="filepill ${cls}">📄 ${escapeHtml(f.name)} <span style="opacity:.7">［${tag}］</span> <button onclick="removePdf(${i})">移除</button></span>`;
+  }).join('');
+}
+function removePdf(i){ pdfFiles.splice(i,1); renderPdfPills(); updateParseButton(); }
+
+function renderOrdersPills(){
+  ordersPills.innerHTML = orderFiles.map((f,i) =>
+    `<span class="filepill">📊 ${escapeHtml(f.name)} <button onclick="removeOrderFile(${i})">移除</button></span>`
+  ).join('');
+}
+function removeOrderFile(i){ orderFiles.splice(i,1); renderOrdersPills(); updateParseButton(); validateOrderColumns(); }
+
+function updateParseButton(){ btnParse.disabled = pdfFiles.length === 0 || orderFiles.length === 0; }
+
+// 訂單檔一上傳就檢查必要欄位，缺了立刻提醒（防 Shopline 匯出時漏勾欄位）
+const REQUIRED_ORDER_COLS = [
+  { label: '訂單號碼', cands: ['訂單號碼','訂單編號'] },
+  { label: '送貨編號', cands: ['送貨編號'] },
+  { label: '收件人電話號碼', cands: ['收件人電話號碼','收件人電話','電話號碼'] },
+];
+const ordersWarn = document.getElementById('ordersWarn');
+async function validateOrderColumns(){
+  ordersWarn.innerHTML = '';
+  if (!orderFiles.length) return;
+  const foundLabels = new Set();
+  for (const file of orderFiles) {
+    let rows;
+    try { rows = await parseOrderFile(file); } catch (e) { continue; }
+    if (!rows.length) continue;
+    for (const req of REQUIRED_ORDER_COLS) {
+      if (findKey(rows[0], req.cands)) foundLabels.add(req.label);
+    }
+  }
+  const missing = REQUIRED_ORDER_COLS.filter(r => !foundLabels.has(r.label)).map(r => r.label);
+  if (missing.length) {
+    ordersWarn.innerHTML = `<div class="warn-box" style="margin-top:10px;margin-bottom:0;">訂單檔缺少欄位：${missing.map(escapeHtml).join('、')}。請回 Shopline 重新匯出，匯出時選「全部欄位」。</div>`;
+  }
+}
+
+/* =========================================================================
+   CSV helpers (output)
+   ========================================================================= */
+function csvEscape(v){ v=String(v); if (/[",\n]/.test(v)) return '"'+v.replace(/"/g,'""')+'"'; return v; }
+function findCol(cols, candidates){
+  for (const cand of candidates){
+    const idx = cols.findIndex(c => c.replace(/\s/g,'') === cand);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+/* =========================================================================
+   Order data (Excel/CSV) parsing + index building
+   ========================================================================= */
+function normDigits(v){ return String(v==null?'':v).replace(/[^\d]/g,''); }
+function normOrderNo(v){ return String(v==null?'':v).trim(); }
+function normPhone(v){
+  let d = normDigits(v);
+  if (d.length === 9 && d[0] !== '0') d = '0' + d; // recover a dropped leading zero
+  return d;
+}
+
+async function parseOrderFile(file){
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.csv')) {
+    const text = await file.text();
+    const wb = XLSX.read(text, { type: 'string' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { defval: '' });
+  } else {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { defval: '' });
+  }
+}
+
+function findKey(row, candidates){
+  const keys = Object.keys(row);
+  for (const cand of candidates) {
+    const k = keys.find(k => k.replace(/\s/g,'') === cand);
+    if (k) return k;
+  }
+  return null;
+}
+
+async function buildOrderIndex(files){
+  const shipMap = new Map();   // 送貨編號 -> 訂單號碼
+  const phoneMap = new Map();  // 電話 -> [訂單號碼...]
+  const byOrderNo = new Map(); // 訂單號碼 -> { recipient, phone }
+  const orderList = [];
+
+  for (const file of files) {
+    let rows;
+    try { rows = await parseOrderFile(file); }
+    catch (e) { console.error('讀取訂單檔失敗', file.name, e); continue; }
+    if (!rows.length) continue;
+    const sample = rows[0];
+    const kOrder = findKey(sample, ['訂單號碼','訂單編號']);
+    const kShip  = findKey(sample, ['送貨編號']);
+    const kPhone = findKey(sample, ['收件人電話號碼','收件人電話','電話號碼']);
+    const kName  = findKey(sample, ['收件人']);
+    if (!kOrder) continue;
+
+    for (const row of rows) {
+      const orderNo = normOrderNo(row[kOrder]);
+      if (!orderNo) continue;
+      const ship = kShip ? normDigits(row[kShip]) : '';
+      const phone = kPhone ? normPhone(row[kPhone]) : '';
+      const recipient = kName ? String(row[kName]||'').trim() : '';
+
+      if (ship) shipMap.set(ship, orderNo);
+      if (phone) {
+        if (!phoneMap.has(phone)) phoneMap.set(phone, []);
+        if (!phoneMap.get(phone).includes(orderNo)) phoneMap.get(phone).push(orderNo);
+      }
+      if (!byOrderNo.has(orderNo)) {
+        byOrderNo.set(orderNo, { recipient, phone });
+        orderList.push({ orderNo, recipient, phone });
+      }
+    }
+  }
+  return { shipMap, phoneMap, byOrderNo, orderList };
+}
+
+/* =========================================================================
+   7-11 pipeline (text-based; unchanged from previous version)
+   ========================================================================= */
+function extractField(items, labelText){
+  const results = [];
+  for (const it of items) {
+    if (it.str.includes(labelText)) {
+      const y0 = it.transform[5], x0 = it.transform[4];
+      const sameLine = items.filter(o => Math.abs(o.transform[5]-y0) < 1 && o.transform[4] > x0)
+        .sort((a,b)=>a.transform[4]-b.transform[4]);
+      const text = sameLine.map(o=>o.str).join('');
+      const m = text.match(/[0-9]{5,}/);
+      if (m) results.push({ x: x0, y: y0, value: m[0] });
+    }
+  }
+  return results;
+}
+function clusterValues(values, tol){
+  const sorted = [...values].sort((a,b)=>a-b);
+  const clusters = [];
+  for (const v of sorted) {
+    let c = clusters.find(c => Math.abs(c.center - v) < tol);
+    if (!c) { c = { center: v, items: [] }; clusters.push(c); }
+    c.items.push(v);
+    c.center = c.items.reduce((a,b)=>a+b,0)/c.items.length;
+  }
+  return clusters.map(c=>c.center).sort((a,b)=>a-b);
+}
+
+async function processSeven11(pdfjsDoc, fileIdx){
+  const rows = [];
+  for (let p = 1; p <= pdfjsDoc.numPages; p++) {
+    const page = await pdfjsDoc.getPage(p);
+    const viewport = page.getViewport({ scale: 1 });
+    const pageWidth = viewport.width, pageHeight = viewport.height;
+    const content = await page.getTextContent();
+
+    const orders = extractField(content.items, ORDER_LABEL);
+    const deliveries = extractField(content.items, DELIVERY_LABEL);
+    for (const o of orders) {
+      let best = null, bestDy = Infinity;
+      for (const d of deliveries) {
+        if (Math.abs(d.x - o.x) < 15 && d.y > o.y) {
+          const dy = d.y - o.y;
+          if (dy < bestDy) { bestDy = dy; best = d; }
+        }
+      }
+      o.delivery = best ? best.value : null;
+    }
+
+    const colCenters = clusterValues(orders.map(o=>o.x), 15);
+    const colPitch = colCenters.length >= 2
+      ? (colCenters[colCenters.length-1] - colCenters[0]) / (colCenters.length-1)
+      : COL_PITCH_DEFAULT;
+    const rowCenters = clusterValues(orders.map(o=>o.y), 5).sort((a,b)=>b-a);
+    let rowPitch = ROW_PITCH_DEFAULT;
+    if (rowCenters.length >= 2) {
+      const diffs = [];
+      for (let i=0;i<rowCenters.length-1;i++) diffs.push(rowCenters[i]-rowCenters[i+1]);
+      diffs.sort((a,b)=>a-b);
+      rowPitch = diffs[Math.floor(diffs.length/2)];
+    }
+
+    for (const o of orders) {
+      const x0 = Math.max(0, o.x - COL_LEFT_RATIO*colPitch);
+      const x1 = Math.min(pageWidth, o.x + COL_RIGHT_RATIO*colPitch);
+      const y1 = Math.min(pageHeight, o.y + ROW_UP_RATIO*rowPitch);
+      const y0 = Math.max(0, o.y - ROW_DOWN_RATIO*rowPitch);
+      rows.push({
+        courier: 'seven11', fileIdx, pageIndex: p-1,
+        cropBox: { x0, y0, x1, y1 },
+        orderNo: '#' + o.value,
+        trackNo: o.delivery || '',
+        matchStatus: 'direct',
+      });
+    }
+  }
+  return rows;
+}
+
+/* =========================================================================
+   Canvas / rendering helpers (for OCR-based couriers)
+   ========================================================================= */
+async function renderPageCanvas(page, dpi){
+  const scale = dpi / 72;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+function cropCanvasFrac(canvas, box, pad){
+  pad = pad || 0;
+  const w = canvas.width, h = canvas.height;
+  const x0 = Math.max(0, Math.round((box.left - pad) * w));
+  const y0 = Math.max(0, Math.round((box.top - pad) * h));
+  const x1 = Math.min(w, Math.round((box.left + box.width + pad) * w));
+  const y1 = Math.min(h, Math.round((box.top + box.height + pad) * h));
+  const cw = Math.max(1, x1 - x0), ch = Math.max(1, y1 - y0);
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(canvas, x0, y0, cw, ch, 0, 0, cw, ch);
+  return out;
+}
+function upscaleCanvas(canvas, factor){
+  const out = document.createElement('canvas');
+  out.width = Math.round(canvas.width * factor);
+  out.height = Math.round(canvas.height * factor);
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(canvas, 0, 0, out.width, out.height);
+  return out;
+}
+
+async function getTessWorker(){
+  if (!tessWorker) tessWorker = await Tesseract.createWorker('eng');
+  return tessWorker;
+}
+async function ocrDigits(canvas, whitelist){
+  const worker = await getTessWorker();
+  await worker.setParameters({ tessedit_char_whitelist: whitelist, tessedit_pageseg_mode: 7 });
+  const { data: { text } } = await worker.recognize(canvas);
+  return text.trim();
+}
+
+/* =========================================================================
+   全家 pipeline (image-based, 2 labels/page)
+   ========================================================================= */
+async function processFamily(pdfjsDoc, fileIdx, onProgress){
+  const rows = [];
+  for (let p = 1; p <= pdfjsDoc.numPages; p++) {
+    const page = await pdfjsDoc.getPage(p);
+    const pageCanvas = await renderPageCanvas(page, OCR_RENDER_DPI);
+
+    for (let b = 0; b < FAMILY_BOXES.length; b++) {
+      const box = FAMILY_BOXES[b];
+      const labelCanvas = cropCanvasFrac(pageCanvas, box, 0.002);
+      let digitCanvas = cropCanvasFrac(labelCanvas, FAMILY_DIGIT_SUBBOX, 0);
+      digitCanvas = upscaleCanvas(digitCanvas, 2);
+      const digits = (await ocrDigits(digitCanvas, '0123456789')).replace(/\D/g, '');
+
+      const pw = pageCanvas.width, ph = pageCanvas.height;
+      // convert page-fraction box -> PDF point space for cropping the output PDF
+      const pageW = page.getViewport({ scale: 1 }).width;
+      const pageH = page.getViewport({ scale: 1 }).height;
+      const x0 = box.left * pageW, x1 = (box.left + box.width) * pageW;
+      const y1 = pageH - box.top * pageH, y0 = pageH - (box.top + box.height) * pageH;
+
+      rows.push({
+        courier: 'family', fileIdx, pageIndex: p-1,
+        cropBox: { x0, y0, x1, y1 },
+        rawShipNo: digits,
+        trackNo: digits,
+        orderNo: null,
+        matchStatus: 'pending',
+      });
+      if (onProgress) onProgress();
+    }
+  }
+  return rows;
+}
+
+/* =========================================================================
+   新竹物流 pipeline (image-based, 1 label/page)
+   ========================================================================= */
+async function processHsinchu(pdfjsDoc, fileIdx, onProgress){
+  const rows = [];
+  for (let p = 1; p <= pdfjsDoc.numPages; p++) {
+    const page = await pdfjsDoc.getPage(p);
+    const pageCanvas = await renderPageCanvas(page, OCR_RENDER_DPI);
+
+    const phoneCanvas = cropCanvasFrac(pageCanvas, HSINCHU_PHONE_BOX, OCR_PAD);
+    const phoneDigits = normPhone(await ocrDigits(phoneCanvas, '0123456789'));
+
+    const trackCanvas = cropCanvasFrac(pageCanvas, HSINCHU_TRACK_BOX, OCR_PAD);
+    const trackRaw = (await ocrDigits(trackCanvas, '0123456789-')).trim();
+    const trackDigits = normDigits(trackRaw); // 物流單號只保留數字，去除 - 符號
+
+    const pageW = page.getViewport({ scale: 1 }).width;
+    const pageH = page.getViewport({ scale: 1 }).height;
+
+    rows.push({
+      courier: 'hsinchu', fileIdx, pageIndex: p-1,
+      cropBox: { x0: 0, y0: 0, x1: pageW, y1: pageH },
+      rawPhone: phoneDigits,
+      trackNo: trackDigits,
+      orderNo: null,
+      matchStatus: 'pending',
+    });
+    if (onProgress) onProgress();
+  }
+  return rows;
+}
+
+/* =========================================================================
+   Format detection
+   ========================================================================= */
+async function detectCourier(pdfjsDoc){
+  const page = await pdfjsDoc.getPage(1);
+  const content = await page.getTextContent();
+  const hasText = content.items.some(it => it.str && it.str.trim().length > 1);
+  if (hasText) {
+    const joined = content.items.map(i=>i.str).join('');
+    if (joined.includes('廠商訂單編號')) return 'seven11';
+  }
+  const vp = page.getViewport({ scale: 1 });
+  if (!hasText) {
+    if (vp.width > 900 && vp.height > 900) return 'hsinchu';
+    if (Math.abs(vp.width - 595) < 40 && Math.abs(vp.height - 842) < 60) return 'family';
+  }
+  return 'unknown';
+}
+
+/* =========================================================================
+   Matching (全家 / 新竹) against order index
+   ========================================================================= */
+// OCR 結果可能夾帶雜訊（例如 QR code 被誤讀成數字），
+// 因此比對一律採「包含式」：只要 OCR 字串中含有 Excel 裡的某組編號即視為命中。
+function findShipInDigits(digits){
+  if (!orderIndex || !digits) return null;
+  for (const [ship, order] of orderIndex.shipMap.entries()) {
+    if (ship && ship.length >= 8 && digits.includes(ship)) return { ship, order };
+  }
+  return null;
+}
+function findPhoneInDigits(digits){
+  if (!orderIndex || !digits) return null;
+  // 先試完全相等，再試包含式
+  if (orderIndex.phoneMap.has(digits)) return { phone: digits, orders: orderIndex.phoneMap.get(digits) };
+  for (const [phone, orders] of orderIndex.phoneMap.entries()) {
+    if (phone && phone.length >= 9 && digits.includes(phone)) return { phone, orders };
+  }
+  return null;
+}
+// 近似比對：同長度且只差一個字元（OCR 偶爾誤讀一碼），需為唯一命中才採用
+function findFuzzyPhone(digits){
+  if (!orderIndex || !digits || digits.length < 9) return null;
+  const hits = [];
+  for (const [phone, orders] of orderIndex.phoneMap.entries()) {
+    if (phone.length !== digits.length) continue;
+    let diff = 0;
+    for (let i = 0; i < phone.length && diff <= 1; i++) if (phone[i] !== digits[i]) diff++;
+    if (diff === 1) hits.push({ phone, orders });
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+
+function applyMatching(rows){
+  for (const row of rows) {
+    if (row.matchStatus === 'direct') continue;
+    if (row.courier === 'family') {
+      const hit = findShipInDigits(row.rawShipNo);
+      if (hit) {
+        row.orderNo = hit.order;
+        row.trackNo = hit.ship;   // 用 Excel 裡乾淨的送貨編號取代含雜訊的 OCR 字串
+        row.matchStatus = 'ok';
+      } else {
+        row.matchStatus = 'notfound';
+      }
+    } else if (row.courier === 'hsinchu') {
+      // 第一道：完整電話比對
+      const phoneHit = findPhoneInDigits(row.rawPhone);
+      if (phoneHit) {
+        if (phoneHit.orders.length === 1) { row.orderNo = phoneHit.orders[0]; row.matchStatus = 'ok'; }
+        else { row.orderNo = phoneHit.orders[0]; row.matchStatus = 'ambiguous'; row.candidates = phoneHit.orders; }
+        continue;
+      }
+      // 第二道備援：物流單號比對 Excel 送貨編號（部分訂單此欄有值）
+      const trackDigits = normDigits(row.trackNo);
+      const shipHit = findShipInDigits(trackDigits);
+      if (shipHit) {
+        row.orderNo = shipHit.order;
+        row.matchStatus = 'ok';
+        continue;
+      }
+      // 第三道備援：電話近似比對（僅差一碼且唯一命中），標示為需確認
+      const fuzzy = findFuzzyPhone(row.rawPhone);
+      if (fuzzy && fuzzy.orders.length === 1) {
+        row.orderNo = fuzzy.orders[0];
+        row.matchStatus = 'fuzzy';
+        continue;
+      }
+      row.matchStatus = 'notfound';
+    }
+  }
+}
+
+/* =========================================================================
+   Main parse flow
+   ========================================================================= */
+const progress = document.getElementById('progress');
+const progressBar = document.getElementById('progressBar');
+const progressLabel = document.getElementById('progressLabel');
+const parseMsg = document.getElementById('parseMsg');
+const resultStep = document.getElementById('resultsCard');
+const btnDownload = document.getElementById('btnDownload');
+const summaryBar = document.getElementById('summaryBar');
+const warnArea = document.getElementById('warnArea');
+const resultsTbody = document.getElementById('resultsTbody');
+const downloadNote = document.getElementById('downloadNote');
+const orderDatalist = document.getElementById('orderDatalist');
+
+function setProgress(pct, label){
+  progress.classList.add('show');
+  progressLabel.classList.add('show');
+  progressBar.style.width = pct + '%';
+  if (label) progressLabel.textContent = label;
+}
+function hideProgress(){
+  setTimeout(() => {
+    progress.classList.remove('show');
+    progressLabel.classList.remove('show');
+    progressBar.style.width = '0%';
+  }, 400);
+}
+
+btnParse.addEventListener('click', async () => {
+  if (!pdfFiles.length) return;
+  btnParse.disabled = true;
+  btnDownload.disabled = true;
+  downloadNote.textContent = '';
+  parseMsg.innerHTML = '';
+  resultStep.classList.add('locked');
+
+  try {
+    // 1) order index (for 全家 / 新竹)
+    setProgress(5, '讀取訂單資料…');
+    orderIndex = await buildOrderIndex(orderFiles);
+
+    // 2) load + detect each pdf
+    setProgress(10, '判斷託運單格式…');
+    for (const f of pdfFiles) {
+      const doc = await pdfjsLib.getDocument({ data: new Uint8Array(f.bytes.slice(0)) }).promise;
+      f.pdfjsDoc = doc;
+      f.courier = await detectCourier(doc);
+    }
+    renderPdfPills();
+
+    const unknownFiles = pdfFiles.filter(f => f.courier === 'unknown');
+    if (unknownFiles.length) {
+      parseMsg.innerHTML = `<div class="warn-box">${unknownFiles.map(f=>escapeHtml(f.name)).join('、')} 無法辨識，已略過。目前支援 7-11、全家、新竹物流的託運單，其他格式請聯絡貨達。</div>`;
+    }
+
+    // 3) process each file according to its courier
+    let allRows = [];
+    let ocrTotal = 0, ocrDone = 0;
+    for (const f of pdfFiles) {
+      if (f.courier === 'family') ocrTotal += f.pdfjsDoc.numPages * FAMILY_BOXES.length;
+      if (f.courier === 'hsinchu') ocrTotal += f.pdfjsDoc.numPages;
+    }
+    const bumpOcr = () => {
+      ocrDone++;
+      const pct = 15 + Math.round((ocrDone / Math.max(1, ocrTotal)) * 70);
+      setProgress(Math.min(pct, 85), `辨識中… (${ocrDone}/${ocrTotal})`);
+    };
+
+    for (let fi = 0; fi < pdfFiles.length; fi++) {
+      const f = pdfFiles[fi];
+      if (f.courier === 'seven11') {
+        setProgress(15, `解析 ${f.name}…`);
+        const rows = await processSeven11(f.pdfjsDoc, fi);
+        allRows = allRows.concat(rows);
+      } else if (f.courier === 'family') {
+        const rows = await processFamily(f.pdfjsDoc, fi, bumpOcr);
+        allRows = allRows.concat(rows);
+      } else if (f.courier === 'hsinchu') {
+        const rows = await processHsinchu(f.pdfjsDoc, fi, bumpOcr);
+        allRows = allRows.concat(rows);
+      }
+    }
+
+    if (!allRows.length) {
+      throw new Error('沒有偵測到任何託運單，請確認上傳的 PDF 是否正確。');
+    }
+
+    setProgress(90, '比對訂單資料…');
+    applyMatching(allRows);
+
+    // filename + dedupe check
+    const seen = {};
+    for (const row of allRows) {
+      row.warn = null;
+      if (row.matchStatus === 'notfound') row.warn = '找不到對應訂單，請手動選擇';
+      else if (row.matchStatus === 'ambiguous') row.warn = `同一支電話有 ${row.candidates.length} 筆訂單，請選擇正確的`;
+      else if (row.matchStatus === 'fuzzy') row.warn = '電話號碼可能有一碼認錯，請確認訂單是否正確';
+      if (row.orderNo) seen[row.orderNo] = (seen[row.orderNo]||0)+1;
+    }
+    for (const row of allRows) {
+      if (row.orderNo && seen[row.orderNo] > 1) {
+        row.warn = (row.warn ? row.warn + '；' : '') + '訂單號碼重複';
+      }
+      row.filename = row.orderNo ? (row.orderNo + '.pdf') : '（未命名）.pdf';
+    }
+
+    resultRows = allRows;
+    setProgress(100, '完成');
+    renderResults();
+    resultStep.scrollIntoView({ behavior:'smooth', block:'start' });
+    hideProgress();
+
+  } catch (err) {
+    console.error(err);
+    parseMsg.innerHTML += `<div class="error-box">解析失敗：${escapeHtml(err.message || String(err))}</div>`;
+    hideProgress();
+  } finally {
+    btnParse.disabled = false;
+  }
+});
+
+/* =========================================================================
+   Results table (editable)
+   ========================================================================= */
+function renderResults(){
+  const badCount = resultRows.filter(r => r.warn).length;
+  summaryBar.innerHTML = `
+    <div><b>${resultRows.length}</b>張託運單已偵測</div>
+    <div><b>${resultRows.length - badCount}</b>筆正常</div>
+    <div><b style="color:${badCount ? '#7A5C00' : '#00A452'}">${badCount}</b>筆需人工確認</div>
+  `;
+  warnArea.innerHTML = badCount
+    ? `<div class="warn-box">有 ${badCount} 筆資料需要人工確認（找不到對應訂單、比對到多筆、或訂單號碼重複）。請在下表選擇正確的訂單，或直接修改物流單號後再下載。</div>`
+    : '';
+
+  orderDatalist.innerHTML = (orderIndex ? orderIndex.orderList : []).map(o =>
+    `<option value="${escapeHtml(o.orderNo)}">${escapeHtml(o.recipient)}</option>`
+  ).join('');
+
+  resultsTbody.innerHTML = resultRows.map((r, i) => {
+    const badgeCls = !r.warn ? 'ok' : (r.matchStatus==='notfound' ? 'bad' : 'warn');
+    const badgeTxt = !r.warn ? '正常' : (r.matchStatus==='notfound' ? '未比對' : '請確認');
+    const confirmBtn = (r.warn && r.orderNo)
+      ? `<button class="btn-confirm" onclick="confirmRow(${i})">✓ 沒問題</button>` : '';
+    return `
+    <tr class="${r.warn ? 'row-bad' : ''}" data-idx="${i}">
+      <td>${i+1}</td>
+      <td><span class="badge courier">${COURIER_LABELS[r.courier]}</span></td>
+      <td>
+        <input class="cell-input ${r.warn && !r.orderNo ? 'bad' : ''}" list="orderDatalist"
+          value="${escapeHtml(r.orderNo || '')}" placeholder="輸入或選擇訂單號碼"
+          onchange="updateOrderNo(${i}, this.value)">
+      </td>
+      <td><input class="cell-input" value="${escapeHtml(r.trackNo || '')}" onchange="updateTrackNo(${i}, this.value)"></td>
+      <td><span class="badge ${badgeCls}" title="${escapeHtml(r.warn||'')}">${badgeTxt}</span>${confirmBtn}</td>
+    </tr>`;
+  }).join('');
+
+  downloadNote.textContent = `將下載 ${resultRows.length} 個 PDF + 1 個 CSV（打包為 ZIP）`;
+  btnDownload.disabled = false;
+  resultStep.classList.remove('locked');
+}
+
+function updateOrderNo(i, val){
+  const row = resultRows[i];
+  row.orderNo = val.trim();
+  row.matchStatus = row.orderNo ? 'manual' : 'notfound';
+  row.warn = row.orderNo ? null : '找不到對應訂單，請手動選擇';
+  row.filename = row.orderNo ? (row.orderNo + '.pdf') : '（未命名）.pdf';
+  renderResults();
+}
+// 「✓ 沒問題」：人工看過、工具比對的結果正確 → 標記為已確認
+function confirmRow(i){
+  const row = resultRows[i];
+  row.matchStatus = 'manual';
+  row.warn = null;
+  renderResults();
+}
+function updateTrackNo(i, val){
+  resultRows[i].trackNo = val.trim();
+}
+
+/* =========================================================================
+   Build ZIP & download
+   ========================================================================= */
+btnDownload.addEventListener('click', async () => {
+  const btn = btnDownload;
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '打包中…';
+
+  try {
+    const zip = new JSZip();
+    const pdfFolder = zip.folder('託運單');
+
+    // load a pdf-lib doc per source file (once)
+    const libDocs = [];
+    for (const f of pdfFiles) {
+      libDocs.push(await PDFLib.PDFDocument.load(f.bytes));
+    }
+
+    const usedNames = new Map();
+    let pdfDone = 0;
+    for (const row of resultRows) {
+      pdfDone++;
+      setProgress(Math.round(pdfDone / resultRows.length * 70), `產生 PDF… (${pdfDone}/${resultRows.length})`);
+      const srcDoc = libDocs[row.fileIdx];
+      const newDoc = await PDFLib.PDFDocument.create();
+      const [copiedPage] = await newDoc.copyPages(srcDoc, [row.pageIndex]);
+      newDoc.addPage(copiedPage);
+      const pg = newDoc.getPage(0);
+      const { x0, y0, x1, y1 } = row.cropBox;
+      const w = x1 - x0, h = y1 - y0;
+      pg.setMediaBox(x0, y0, w, h);
+      pg.setCropBox(x0, y0, w, h);
+      const bytes = await newDoc.save();
+
+      let name = row.filename;
+      const count = (usedNames.get(name) || 0) + 1;
+      usedNames.set(name, count);
+      if (count > 1) name = name.replace(/\.pdf$/i, `_${count}.pdf`);
+      pdfFolder.file(name, bytes);
+    }
+
+    const nameCol = findCol(csvHeaderCols, ['出貨單名稱']);
+    const trackCol = findCol(csvHeaderCols, ['物流單號']);
+    const fileCol = findCol(csvHeaderCols, ['檔名']);
+    const lines = [csvHeaderCols.map(csvEscape).join(',')];
+    for (const row of resultRows) {
+      const line = csvHeaderCols.map(() => '');
+      if (nameCol !== -1) line[nameCol] = row.orderNo || '';
+      if (trackCol !== -1) line[trackCol] = row.trackNo || '';
+      if (fileCol !== -1) line[fileCol] = row.filename || '';
+      lines.push(line.map(csvEscape).join(','));
+    }
+    zip.file('出貨資訊.csv', '\uFEFF' + lines.join('\r\n'));
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' }, meta => {
+      setProgress(70 + Math.round(meta.percent * 0.3), `打包 ZIP… ${Math.round(meta.percent)}%`);
+    });
+    setProgress(100, '完成');
+    hideProgress();
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = `託運單上傳檔_${stamp}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+  } catch (err) {
+    console.error(err);
+    hideProgress();
+    alert('打包下載時發生錯誤：' + (err.message || err));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+</script>
+</body>
+</html>
