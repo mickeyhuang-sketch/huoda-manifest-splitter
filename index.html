@@ -1053,13 +1053,18 @@ btnDownload.addEventListener('click', async () => {
       setProgress(Math.round(pdfDone / resultRows.length * 70), `產生 PDF… (${pdfDone}/${resultRows.length})`);
       const srcDoc = libDocs[row.fileIdx];
       const newDoc = await PDFLib.PDFDocument.create();
-      const [copiedPage] = await newDoc.copyPages(srcDoc, [row.pageIndex]);
-      newDoc.addPage(copiedPage);
-      const pg = newDoc.getPage(0);
       const { x0, y0, x1, y1 } = row.cropBox;
       const w = x1 - x0, h = y1 - y0;
-      pg.setMediaBox(x0, y0, w, h);
-      pg.setCropBox(x0, y0, w, h);
+      const embedded = await newDoc.embedPage(srcDoc.getPage(row.pageIndex), {
+        left: x0, bottom: y0, right: x1, top: y1,
+      });
+      // 頁面固定 10×15cm 直式（同標籤紙規格），標籤等比例縮放置中；
+      // 頁面若跟著裁切框走，寬>高時列印端「自動旋轉貼合紙張」會轉 90° 印成橫的
+      const pageW = 283.465, pageH = 425.197; // 10cm × 15cm（1cm = 28.3465pt）
+      const scale = Math.min(pageW / w, pageH / h);
+      const dw = w * scale, dh = h * scale;
+      const pg = newDoc.addPage([pageW, pageH]);
+      pg.drawPage(embedded, { x: (pageW - dw) / 2, y: (pageH - dh) / 2, width: dw, height: dh });
       const bytes = await newDoc.save();
 
       let name = row.filename;
