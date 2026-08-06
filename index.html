@@ -584,6 +584,44 @@ function clusterValues(values, tol){
   return clusters.map(c=>c.center).sort((a,b)=>a-b);
 }
 
+// 抓頁面上實際畫出的框線（細長矩形），座標追蹤 CTM 轉回頁面空間。
+// 7-11 每格標籤有完整外框，裁切對齊框線外緣才不會把右邊/上面的線切掉
+async function extractFrameLines(page){
+  const opList = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS;
+  const hLines = [], vLines = [];
+  let m = [1,0,0,1,0,0];
+  const stack = [];
+  const mul = (a,b)=>[
+    a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+    a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+    a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5],
+  ];
+  const apply = (mm,x,y)=>[mm[0]*x+mm[2]*y+mm[4], mm[1]*x+mm[3]*y+mm[5]];
+  for (let i=0;i<opList.fnArray.length;i++){
+    const fn = opList.fnArray[i], args = opList.argsArray[i];
+    if (fn === OPS.save) stack.push(m.slice());
+    else if (fn === OPS.restore) { if (stack.length) m = stack.pop(); }
+    else if (fn === OPS.transform) m = mul(m, args);
+    else if (fn === OPS.constructPath) {
+      const pathOps = args[0], pArgs = args[1];
+      for (let j=0,k=0;j<pathOps.length;j++){
+        if (pathOps[j] === OPS.rectangle){
+          const x=pArgs[k], y=pArgs[k+1], w=pArgs[k+2], h=pArgs[k+3]; k+=4;
+          const p0=apply(m,x,y), p1=apply(m,x+w,y+h);
+          const rx0=Math.min(p0[0],p1[0]), rx1=Math.max(p0[0],p1[0]);
+          const ry0=Math.min(p0[1],p1[1]), ry1=Math.max(p0[1],p1[1]);
+          if (ry1-ry0 < 3 && rx1-rx0 > 150) hLines.push({x0:rx0,x1:rx1,y0:ry0,y1:ry1});
+          else if (rx1-rx0 < 3 && ry1-ry0 > 150) vLines.push({x0:rx0,x1:rx1,y0:ry0,y1:ry1});
+        }
+        else if (pathOps[j] === OPS.moveTo || pathOps[j] === OPS.lineTo) k+=2;
+        else if (pathOps[j] === OPS.curveTo) k+=6;
+      }
+    }
+  }
+  return { hLines, vLines };
+}
+
 async function processSeven11(pdfjsDoc, fileIdx){
   const rows = [];
   for (let p = 1; p <= pdfjsDoc.numPages; p++) {
@@ -618,11 +656,29 @@ async function processSeven11(pdfjsDoc, fileIdx){
       rowPitch = diffs[Math.floor(diffs.length/2)];
     }
 
+    const frame = await extractFrameLines(page);
+
     for (const o of orders) {
-      const x0 = Math.max(0, o.x - COL_LEFT_RATIO*colPitch);
-      const x1 = Math.min(pageWidth, o.x + COL_RIGHT_RATIO*colPitch);
-      const y1 = Math.min(pageHeight, o.y + ROW_UP_RATIO*rowPitch);
-      const y0 = Math.max(0, o.y - ROW_DOWN_RATIO*rowPitch);
+      // 比例法（找不到框線時的後備）
+      let x0 = Math.max(0, o.x - COL_LEFT_RATIO*colPitch);
+      let x1 = Math.min(pageWidth, o.x + COL_RIGHT_RATIO*colPitch);
+      let y1 = Math.min(pageHeight, o.y + ROW_UP_RATIO*rowPitch);
+      let y0 = Math.max(0, o.y - ROW_DOWN_RATIO*rowPitch);
+      // 對齊實際框線：找包住這個編號的四條線，外擴 2pt 保留完整邊框
+      const left  = frame.vLines.filter(l => l.x1 <= o.x && l.y0 <= o.y && l.y1 >= o.y).sort((a,b)=>b.x1-a.x1)[0];
+      const right = frame.vLines.filter(l => l.x0 >= o.x && l.y0 <= o.y && l.y1 >= o.y).sort((a,b)=>a.x0-b.x0)[0];
+      const below = frame.hLines.filter(l => l.y1 <= o.y && l.x0 <= o.x && l.x1 >= o.x).sort((a,b)=>b.y1-a.y1)[0];
+      const above = frame.hLines.filter(l => l.y0 >= o.y && l.x0 <= o.x && l.x1 >= o.x).sort((a,b)=>a.y0-b.y0)[0];
+      if (left && right && below && above) {
+        const fw = right.x1 - left.x0, fh = above.y1 - below.y0;
+        // 框尺寸要與比例法推估的格子相近才採用，避免誤咬到標籤內部的分隔線
+        if (fw > 0.9*(x1-x0) && fw < 1.4*(x1-x0) && fh > 0.9*(y1-y0) && fh < 1.4*(y1-y0)) {
+          x0 = Math.max(0, left.x0 - 2);
+          x1 = Math.min(pageWidth, right.x1 + 2);
+          y0 = Math.max(0, below.y0 - 2);
+          y1 = Math.min(pageHeight, above.y1 + 2);
+        }
+      }
       rows.push({
         courier: 'seven11', fileIdx, pageIndex: p-1,
         cropBox: { x0, y0, x1, y1 },
