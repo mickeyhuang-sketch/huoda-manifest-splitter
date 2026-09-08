@@ -386,6 +386,9 @@ const csvHeaderCols = ['出貨單名稱', '物流單號', '檔名']; // 固定�
 let orderIndex = null;  // { shipMap, phoneMap, orderList, byOrderNo }
 let resultRows = [];    // unified rows for preview + export
 let tessWorker = null;
+let inputVersion = 0;
+let isParsing = false;
+let isDownloading = false;
 
 /* =========================================================================
    UI WIRING — file pickers
@@ -412,14 +415,17 @@ const btnParse = document.getElementById('btnParse');
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 setupDrop(dropPdf, filePdfInput, async (files) => {
+  invalidateResults();
   for (const f of files) {
     const buf = await f.arrayBuffer();
+    invalidateResults();
     pdfFiles.push({ name: f.name, bytes: buf, courier: null });
   }
   renderPdfPills();
   updateParseButton();
 });
 setupDrop(dropOrders, fileOrdersInput, (files) => {
+  invalidateResults();
   for (const f of files) orderFiles.push(f);
   renderOrdersPills();
   updateParseButton();
@@ -433,16 +439,28 @@ function renderPdfPills(){
     return `<span class="filepill ${cls}">📄 ${escapeHtml(f.name)} <span style="opacity:.7">［${tag}］</span> <button onclick="removePdf(${i})">移除</button></span>`;
   }).join('');
 }
-function removePdf(i){ pdfFiles.splice(i,1); renderPdfPills(); updateParseButton(); }
+function removePdf(i){ invalidateResults(); pdfFiles.splice(i,1); renderPdfPills(); updateParseButton(); }
 
 function renderOrdersPills(){
   ordersPills.innerHTML = orderFiles.map((f,i) =>
     `<span class="filepill">📊 ${escapeHtml(f.name)} <button onclick="removeOrderFile(${i})">移除</button></span>`
   ).join('');
 }
-function removeOrderFile(i){ orderFiles.splice(i,1); renderOrdersPills(); updateParseButton(); validateOrderColumns(); }
+function removeOrderFile(i){ invalidateResults(); orderFiles.splice(i,1); renderOrdersPills(); updateParseButton(); validateOrderColumns(); }
 
-function updateParseButton(){ btnParse.disabled = pdfFiles.length === 0 || orderFiles.length === 0; }
+function invalidateResults(){
+  inputVersion++;
+  parseMsg.innerHTML = '';
+  resultRows = [];
+  btnDownload.disabled = true;
+  downloadNote.textContent = '';
+  resultsTbody.innerHTML = '';
+  summaryBar.innerHTML = '';
+  warnArea.innerHTML = '';
+  resultStep.classList.add('locked');
+}
+
+function updateParseButton(){ btnParse.disabled = isParsing || isDownloading || pdfFiles.length === 0 || orderFiles.length === 0; }
 
 // 訂單檔一上傳就檢查必要欄位，缺了立刻提醒（防 Shopline 匯出時漏勾欄位）
 const REQUIRED_ORDER_COLS = [
@@ -488,6 +506,8 @@ function normDigits(v){ return String(v==null?'':v).replace(/[^\d]/g,''); }
 function normOrderNo(v){ return String(v==null?'':v).trim(); }
 function normPhone(v){
   let d = normDigits(v);
+  if (/^8869[0-9]{8}$/.test(d)) d = '0' + d.slice(3);
+  else if (/^88609[0-9]{8}$/.test(d)) d = d.slice(3);
   if (d.length === 9 && d[0] !== '0') d = '0' + d; // recover a dropped leading zero
   return d;
 }
@@ -930,7 +950,9 @@ function hideProgress(){
 }
 
 btnParse.addEventListener('click', async () => {
-  if (!pdfFiles.length) return;
+  if (isParsing || isDownloading || !pdfFiles.length || !orderFiles.length) return;
+  isParsing = true;
+  const version = inputVersion;
   btnParse.disabled = true;
   btnDownload.disabled = true;
   downloadNote.textContent = '';
@@ -940,14 +962,17 @@ btnParse.addEventListener('click', async () => {
   try {
     // 1) order index (for 全家 / 新竹)
     setProgress(5, '讀取訂單資料…');
-    orderIndex = await buildOrderIndex(orderFiles);
+    orderIndex = await buildOrderIndex(orderFiles.slice());
+    if (version !== inputVersion) return;
 
     // 2) load + detect each pdf
     setProgress(10, '判斷託運單格式…');
     for (const f of pdfFiles) {
       const doc = await pdfjsLib.getDocument({ data: new Uint8Array(f.bytes.slice(0)) }).promise;
+      if (version !== inputVersion) return;
       f.pdfjsDoc = doc;
       f.courier = await detectCourier(doc);
+      if (version !== inputVersion) return;
     }
     renderPdfPills();
 
@@ -964,6 +989,7 @@ btnParse.addEventListener('click', async () => {
       if (f.courier === 'hsinchu') ocrTotal += f.pdfjsDoc.numPages;
     }
     const bumpOcr = () => {
+      if (version !== inputVersion) return;
       ocrDone++;
       const pct = 15 + Math.round((ocrDone / Math.max(1, ocrTotal)) * 70);
       setProgress(Math.min(pct, 85), `辨識中… (${ocrDone}/${ocrTotal})`);
@@ -974,12 +1000,15 @@ btnParse.addEventListener('click', async () => {
       if (f.courier === 'seven11') {
         setProgress(15, `解析 ${f.name}…`);
         const rows = await processSeven11(f.pdfjsDoc, fi);
+        if (version !== inputVersion) return;
         allRows = allRows.concat(rows);
       } else if (f.courier === 'family') {
         const rows = await processFamily(f.pdfjsDoc, fi, bumpOcr);
+        if (version !== inputVersion) return;
         allRows = allRows.concat(rows);
       } else if (f.courier === 'hsinchu') {
         const rows = await processHsinchu(f.pdfjsDoc, fi, bumpOcr);
+        if (version !== inputVersion) return;
         allRows = allRows.concat(rows);
       }
     }
@@ -1014,11 +1043,14 @@ btnParse.addEventListener('click', async () => {
     hideProgress();
 
   } catch (err) {
+    if (version !== inputVersion) return;
     console.error(err);
     parseMsg.innerHTML += `<div class="error-box">解析失敗：${escapeHtml(err.message || String(err))}</div>`;
     hideProgress();
   } finally {
-    btnParse.disabled = false;
+    isParsing = false;
+    updateParseButton();
+    hideProgress();
   }
 });
 
@@ -1087,6 +1119,10 @@ function updateTrackNo(i, val){
    Build ZIP & download
    ========================================================================= */
 btnDownload.addEventListener('click', async () => {
+  if (isParsing || isDownloading || !resultRows.length) return;
+  isDownloading = true;
+  const version = inputVersion;
+  updateParseButton();
   const btn = btnDownload;
   btn.disabled = true;
   const originalText = btn.textContent;
@@ -1100,9 +1136,11 @@ btnDownload.addEventListener('click', async () => {
     const libDocs = [];
     for (const f of pdfFiles) {
       libDocs.push(await PDFLib.PDFDocument.load(f.bytes));
+      if (version !== inputVersion) return;
     }
 
-    const usedNames = new Map();
+    const usedNames = new Set();
+    const exportedNames = [];
     let pdfDone = 0;
     for (const row of resultRows) {
       pdfDone++;
@@ -1123,10 +1161,11 @@ btnDownload.addEventListener('click', async () => {
       pg.drawPage(embedded, { x: (pageW - dw) / 2, y: (pageH - dh) / 2, width: dw, height: dh });
       const bytes = await newDoc.save();
 
-      let name = row.filename;
-      const count = (usedNames.get(name) || 0) + 1;
-      usedNames.set(name, count);
-      if (count > 1) name = name.replace(/\.pdf$/i, `_${count}.pdf`);
+      const baseName = row.filename;
+      let name = baseName, suffix = 2;
+      while (usedNames.has(name)) name = baseName.replace(/\.pdf$/i, '') + `_${suffix++}.pdf`;
+      usedNames.add(name);
+      exportedNames.push(name);
       pdfFolder.file(name, bytes);
     }
 
@@ -1134,11 +1173,11 @@ btnDownload.addEventListener('click', async () => {
     const trackCol = findCol(csvHeaderCols, ['物流單號']);
     const fileCol = findCol(csvHeaderCols, ['檔名']);
     const lines = [csvHeaderCols.map(csvEscape).join(',')];
-    for (const row of resultRows) {
+    for (const [rowIndex, row] of resultRows.entries()) {
       const line = csvHeaderCols.map(() => '');
       if (nameCol !== -1) line[nameCol] = row.orderNo || '';
       if (trackCol !== -1) line[trackCol] = row.trackNo || '';
-      if (fileCol !== -1) line[fileCol] = row.filename || '';
+      if (fileCol !== -1) line[fileCol] = exportedNames[rowIndex];
       lines.push(line.map(csvEscape).join(','));
     }
     zip.file('出貨資訊.csv', '\uFEFF' + lines.join('\r\n'));
@@ -1146,6 +1185,7 @@ btnDownload.addEventListener('click', async () => {
     const zipBlob = await zip.generateAsync({ type: 'blob' }, meta => {
       setProgress(70 + Math.round(meta.percent * 0.3), `打包 ZIP… ${Math.round(meta.percent)}%`);
     });
+    if (version !== inputVersion) return;
     setProgress(100, '完成');
     hideProgress();
     const url = URL.createObjectURL(zipBlob);
@@ -1159,12 +1199,16 @@ btnDownload.addEventListener('click', async () => {
     setTimeout(() => URL.revokeObjectURL(url), 4000);
 
   } catch (err) {
+    if (version !== inputVersion) return;
     console.error(err);
     hideProgress();
     alert('打包下載時發生錯誤：' + (err.message || err));
   } finally {
-    btn.disabled = false;
+    isDownloading = false;
+    btn.disabled = resultRows.length === 0;
     btn.textContent = originalText;
+    updateParseButton();
+    hideProgress();
   }
 });
 </script>
