@@ -369,11 +369,15 @@ const FAMILY_BOXES = [
 // 廠商編號 digit line, relative to each label box above
 const FAMILY_DIGIT_SUBBOX = { left: 0, top: 0.078, width: 0.62, height: 0.072 };
 
-// ---- 新竹物流 (image-based, 1 label per page) ----
+// ---- 新竹物流 (image-based) ----
+// 每張標籤都是一張正方形圖：舊版一頁一張（整頁就是標籤），A4 版一頁並排多張。
+// 下面兩個框是「相對於單張標籤」的比例，兩種版面共用。
 const HSINCHU_PHONE_BOX = { left: 0.0799, top: 0.7261, width: 0.1961, height: 0.02496 };
 const HSINCHU_TRACK_BOX = { left: 0.2868, top: 0.4759, width: 0.2251, height: 0.02496 };
 const OCR_RENDER_DPI = 450;
 const OCR_PAD = 0.010;
+const HSINCHU_LABEL_PX = 3000; // 單張標籤 OCR 用的邊長。標籤原圖 1000px，放大 3 倍最穩；舊做法放大到 6250 會把 3 認成 5
+const HSINCHU_LABEL_MIN_PT = 100; // 小於這個邊長的方形圖不是標籤
 
 const COURIER_LABELS = { seven11: '7-11', family: '全家', hsinchu: '新竹物流', unknown: '未知格式' };
 
@@ -796,33 +800,111 @@ async function processFamily(pdfjsDoc, fileIdx, onProgress){
 }
 
 /* =========================================================================
-   新竹物流 pipeline (image-based, 1 label/page)
+   新竹物流 pipeline (image-based)
+   一頁一張（整頁就是標籤）與 A4 一頁並排多張，兩種版面共用
    ========================================================================= */
-async function processHsinchu(pdfjsDoc, fileIdx, onProgress){
+// 抓頁面上每張圖片實際擺放的位置（PDF 座標，左下原點），座標追蹤 CTM
+async function extractImageRects(page){
+  const opList = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS;
+  const rects = [];
+  let m = [1,0,0,1,0,0];
+  const stack = [];
+  const mul = (a,b)=>[
+    a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+    a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+    a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5],
+  ];
+  const apply = (mm,x,y)=>[mm[0]*x+mm[2]*y+mm[4], mm[1]*x+mm[3]*y+mm[5]];
+  for (let i=0;i<opList.fnArray.length;i++){
+    const fn = opList.fnArray[i], args = opList.argsArray[i];
+    if (fn === OPS.save) stack.push(m.slice());
+    else if (fn === OPS.restore) { if (stack.length) m = stack.pop(); }
+    else if (fn === OPS.transform) m = mul(m, args);
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(m.slice());
+      if (args && Array.isArray(args[0]) && args[0].length === 6) m = mul(m, args[0]);
+    }
+    else if (fn === OPS.paintFormXObjectEnd) { if (stack.length) m = stack.pop(); }
+    else if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject || fn === OPS.paintInlineImageXObject) {
+      // 圖片畫在單位方格 (0,0)-(1,1)，四個角轉回頁面座標取外框
+      const pts = [apply(m,0,0), apply(m,1,0), apply(m,0,1), apply(m,1,1)];
+      const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+      rects.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
+    }
+  }
+  return rects;
+}
+
+// 新竹標籤 = 頁面上夠大的正方形圖片；依「由上到下、由左到右」排序
+async function findHsinchuLabels(page){
+  const vp = page.getViewport({ scale: 1 });
+  const labels = (await extractImageRects(page)).filter(r => {
+    const w = r.x1 - r.x0, h = r.y1 - r.y0;
+    return w >= HSINCHU_LABEL_MIN_PT && h >= HSINCHU_LABEL_MIN_PT && Math.abs(w - h) <= 0.1 * Math.max(w, h)
+      && r.x0 > -1 && r.y0 > -1 && r.x1 < vp.width + 1 && r.y1 < vp.height + 1;
+  });
+  labels.sort((a,b) => {
+    const rowTol = 0.5 * (a.y1 - a.y0);
+    if (Math.abs(a.y1 - b.y1) > rowTol) return b.y1 - a.y1;
+    return a.x0 - b.x0;
+  });
+  return labels;
+}
+
+// 每頁要處理的標籤框。一頁一張的大頁面若找不到方形圖，退回「整頁就是標籤」的舊行為；
+// A4 頁面找不到就當作沒有標籤（例如空白頁），不硬切
+async function hsinchuPageLabels(pdfjsDoc){
+  const pages = [];
+  for (let p = 1; p <= pdfjsDoc.numPages; p++) {
+    const page = await pdfjsDoc.getPage(p);
+    let labels = await findHsinchuLabels(page);
+    if (!labels.length) {
+      const vp = page.getViewport({ scale: 1 });
+      if (vp.width > 900 && vp.height > 900) labels = [{ x0: 0, y0: 0, x1: vp.width, y1: vp.height }];
+    }
+    pages.push(labels);
+  }
+  return pages;
+}
+
+// 只把頁面上的一塊（PDF 座標）畫成 canvas，寬度固定 widthPx
+async function renderRegionCanvas(page, rect, widthPx){
+  const pageH = page.getViewport({ scale: 1 }).height;
+  const scale = widthPx / (rect.x1 - rect.x0);
+  const viewport = page.getViewport({ scale, offsetX: -rect.x0 * scale, offsetY: -(pageH - rect.y1) * scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil((rect.x1 - rect.x0) * scale);
+  canvas.height = Math.ceil((rect.y1 - rect.y0) * scale);
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
+async function processHsinchu(pdfjsDoc, fileIdx, pageLabels, onProgress){
   const rows = [];
   for (let p = 1; p <= pdfjsDoc.numPages; p++) {
     const page = await pdfjsDoc.getPage(p);
-    const pageCanvas = await renderPageCanvas(page, OCR_RENDER_DPI);
+    for (const label of pageLabels[p-1]) {
+      const labelCanvas = await renderRegionCanvas(page, label, HSINCHU_LABEL_PX);
 
-    const phoneCanvas = cropCanvasFrac(pageCanvas, HSINCHU_PHONE_BOX, OCR_PAD);
-    const phoneDigits = normPhone(await ocrDigits(phoneCanvas, '0123456789'));
+      const phoneCanvas = cropCanvasFrac(labelCanvas, HSINCHU_PHONE_BOX, OCR_PAD);
+      const phoneDigits = normPhone(await ocrDigits(phoneCanvas, '0123456789'));
 
-    const trackCanvas = cropCanvasFrac(pageCanvas, HSINCHU_TRACK_BOX, OCR_PAD);
-    const trackRaw = (await ocrDigits(trackCanvas, '0123456789-')).trim();
-    const trackDigits = normDigits(trackRaw); // 物流單號只保留數字，去除 - 符號
+      const trackCanvas = cropCanvasFrac(labelCanvas, HSINCHU_TRACK_BOX, OCR_PAD);
+      const trackRaw = (await ocrDigits(trackCanvas, '0123456789-')).trim();
+      const trackDigits = normDigits(trackRaw); // 物流單號只保留數字，去除 - 符號
 
-    const pageW = page.getViewport({ scale: 1 }).width;
-    const pageH = page.getViewport({ scale: 1 }).height;
-
-    rows.push({
-      courier: 'hsinchu', fileIdx, pageIndex: p-1,
-      cropBox: { x0: 0, y0: 0, x1: pageW, y1: pageH },
-      rawPhone: phoneDigits,
-      trackNo: trackDigits,
-      orderNo: null,
-      matchStatus: 'pending',
-    });
-    if (onProgress) onProgress();
+      rows.push({
+        courier: 'hsinchu', fileIdx, pageIndex: p-1,
+        cropBox: { x0: label.x0, y0: label.y0, x1: label.x1, y1: label.y1 },
+        rawPhone: phoneDigits,
+        trackNo: trackDigits,
+        orderNo: null,
+        matchStatus: 'pending',
+      });
+      if (onProgress) onProgress();
+    }
   }
   return rows;
 }
@@ -841,6 +923,8 @@ async function detectCourier(pdfjsDoc){
   const vp = page.getViewport({ scale: 1 });
   if (!hasText) {
     if (vp.width > 900 && vp.height > 900) return 'hsinchu';
+    // 新竹 A4 並排版：頁面上是一張張正方形標籤圖（全家的標籤圖是直式長方形）
+    if ((await findHsinchuLabels(page)).length) return 'hsinchu';
     if (Math.abs(vp.width - 595) < 40 && Math.abs(vp.height - 842) < 60) return 'family';
   }
   return 'unknown';
@@ -986,7 +1070,11 @@ btnParse.addEventListener('click', async () => {
     let ocrTotal = 0, ocrDone = 0;
     for (const f of pdfFiles) {
       if (f.courier === 'family') ocrTotal += f.pdfjsDoc.numPages * FAMILY_BOXES.length;
-      if (f.courier === 'hsinchu') ocrTotal += f.pdfjsDoc.numPages;
+      if (f.courier === 'hsinchu') {
+        f.hsinchuLabels = await hsinchuPageLabels(f.pdfjsDoc);
+        if (version !== inputVersion) return;
+        ocrTotal += f.hsinchuLabels.reduce((sum, labels) => sum + labels.length, 0);
+      }
     }
     const bumpOcr = () => {
       if (version !== inputVersion) return;
@@ -1007,7 +1095,7 @@ btnParse.addEventListener('click', async () => {
         if (version !== inputVersion) return;
         allRows = allRows.concat(rows);
       } else if (f.courier === 'hsinchu') {
-        const rows = await processHsinchu(f.pdfjsDoc, fi, bumpOcr);
+        const rows = await processHsinchu(f.pdfjsDoc, fi, f.hsinchuLabels, bumpOcr);
         if (version !== inputVersion) return;
         allRows = allRows.concat(rows);
       }
